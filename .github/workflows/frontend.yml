@@ -7,6 +7,7 @@ on:
     paths:
       - 'backend/app/**'
       - 'frontend/**'
+      - '.github/workflows/frontend.yml'
 
 jobs:
   verify:
