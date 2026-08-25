@@ -1,0 +1,178 @@
+name: opspilot
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: opspilot
+      POSTGRES_USER: opspilot
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    ports:
+      - "127.0.0.1:${OPSPILOT_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - opspilot-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opspilot -d opspilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  migrate:
+    build:
+      context: ./backend
+    environment: &backend-environment
+      OPSPILOT_ENVIRONMENT: production
+      OPSPILOT_DOCS_ENABLED: "false"
+      # Local single-host template only. Keep the production default (true) behind TLS ingress.
+      OPSPILOT_REQUIRE_HTTPS: "false"
+      OPSPILOT_TRUST_FORWARDED_PROTO: "false"
+      # Local HTTP template only. Real production HTTPS must use Secure cookies.
+      OPSPILOT_BROWSER_COOKIE_SECURE: "false"
+      OPSPILOT_DATABASE_URL: postgresql+asyncpg://opspilot@postgres:5432/opspilot
+      OPSPILOT_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      OPSPILOT_STARTUP_RECOVERY_ENABLED: "true"
+      OPSPILOT_STARTUP_RECOVERY_RETRY_SECONDS: "30"
+      OPSPILOT_AUDIT_RETENTION_DAYS: "365"
+      OPSPILOT_AUDIT_ARCHIVE_BATCH_SIZE: "10000"
+      OPSPILOT_ALERTMANAGER_WEBHOOK_TOKEN_FILE: /run/secrets/alertmanager_webhook_token
+      OPSPILOT_RUNNER_BOOTSTRAP_TOKEN_FILE: /run/secrets/runner_bootstrap_token
+      OPSPILOT_CONTROL_PLANE_AUTH_ENABLED: "true"
+      OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN_FILE: /run/secrets/control_plane_bootstrap_token
+      OPSPILOT_CORS_ORIGINS: '["http://localhost:${OPSPILOT_FRONTEND_PORT:-8080}","http://127.0.0.1:${OPSPILOT_FRONTEND_PORT:-8080}"]'
+      OPSPILOT_AGENT_RUNTIME_ENABLED: "false"
+    secrets: &backend-secrets
+      - postgres_password
+      - alertmanager_webhook_token
+      - runner_bootstrap_token
+      - control_plane_bootstrap_token
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment: *backend-environment
+    secrets: *backend-secrets
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${OPSPILOT_BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api/v1
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${OPSPILOT_FRONTEND_BIND_ADDRESS:-127.0.0.1}:${OPSPILOT_FRONTEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  runner:
+    profiles: ["runner"]
+    build:
+      context: ./runner
+    restart: unless-stopped
+    environment:
+      OPSPILOT_RUNNER_CONTROL_PLANE_URL: http://backend:8000/runner/v1
+      OPSPILOT_RUNNER_ENVIRONMENT: production
+      # Explicit exception for the private single-host Compose network.
+      OPSPILOT_RUNNER_ALLOW_INSECURE_HTTP: "true"
+      OPSPILOT_RUNNER_NAME: ${OPSPILOT_RUNNER_NAME:-docker-runner}
+      OPSPILOT_RUNNER_ENVIRONMENT_ID: ${OPSPILOT_RUNNER_ENVIRONMENT_ID:-}
+      OPSPILOT_RUNNER_BOOTSTRAP_TOKEN_FILE: /run/secrets/runner_bootstrap_token
+      OPSPILOT_RUNNER_CREDENTIAL_FILE: /var/lib/opspilot-runner/credentials.json
+      OPSPILOT_RUNNER_HEARTBEAT_SECONDS: ${OPSPILOT_RUNNER_HEARTBEAT_SECONDS:-20}
+      OPSPILOT_RUNNER_TASK_RENEW_SECONDS: ${OPSPILOT_RUNNER_TASK_RENEW_SECONDS:-30}
+      OPSPILOT_RUNNER_ACTION_RENEW_SECONDS: ${OPSPILOT_RUNNER_ACTION_RENEW_SECONDS:-30}
+      OPSPILOT_RUNNER_ACTION_TIMEOUT_SECONDS: ${OPSPILOT_RUNNER_ACTION_TIMEOUT_SECONDS:-120}
+      OPSPILOT_RUNNER_CONNECTOR_CIRCUIT_FAILURE_THRESHOLD: ${OPSPILOT_RUNNER_CONNECTOR_CIRCUIT_FAILURE_THRESHOLD:-5}
+      OPSPILOT_RUNNER_CONNECTOR_CIRCUIT_RECOVERY_SECONDS: ${OPSPILOT_RUNNER_CONNECTOR_CIRCUIT_RECOVERY_SECONDS:-30}
+      OPSPILOT_RUNNER_CONNECTOR_RETRY_MAX_ATTEMPTS: ${OPSPILOT_RUNNER_CONNECTOR_RETRY_MAX_ATTEMPTS:-2}
+      OPSPILOT_RUNNER_CONNECTOR_RETRY_BASE_SECONDS: ${OPSPILOT_RUNNER_CONNECTOR_RETRY_BASE_SECONDS:-0.2}
+      OPSPILOT_RUNNER_CONNECTOR_RETRY_MAX_SECONDS: ${OPSPILOT_RUNNER_CONNECTOR_RETRY_MAX_SECONDS:-2}
+      OPSPILOT_RUNNER_CONNECTOR_RETRY_JITTER_RATIO: ${OPSPILOT_RUNNER_CONNECTOR_RETRY_JITTER_RATIO:-0.2}
+      OPSPILOT_RUNNER_PROBE_ALLOWED_HOSTS: ${OPSPILOT_RUNNER_PROBE_ALLOWED_HOSTS:-[]}
+      OPSPILOT_RUNNER_PROBE_ALLOWED_PORTS: ${OPSPILOT_RUNNER_PROBE_ALLOWED_PORTS:-[]}
+      OPSPILOT_RUNNER_SQLITE_ALLOWED_ROOTS: ${OPSPILOT_RUNNER_SQLITE_ALLOWED_ROOTS:-[]}
+    secrets:
+      - runner_bootstrap_token
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - opspilot-runner-data:/var/lib/opspilot-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${OPSPILOT_DOCKER_GID:-0}"
+    healthcheck:
+      test: ["CMD", "python", "-m", "opspilot_runner", "healthcheck"]
+      interval: 20s
+      timeout: 8s
+      retries: 6
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+secrets:
+  postgres_password:
+    file: ${OPSPILOT_COMPOSE_POSTGRES_PASSWORD_FILE:-./.secrets/postgres_password}
+  alertmanager_webhook_token:
+    file: ${OPSPILOT_COMPOSE_ALERTMANAGER_TOKEN_FILE:-./.secrets/alertmanager_webhook_token}
+  runner_bootstrap_token:
+    file: ${OPSPILOT_COMPOSE_RUNNER_TOKEN_FILE:-./.secrets/runner_bootstrap_token}
+  control_plane_bootstrap_token:
+    file: ${OPSPILOT_COMPOSE_CONTROL_PLANE_TOKEN_FILE:-./.secrets/control_plane_bootstrap_token}
+
+volumes:
+  opspilot-postgres-data:
+  opspilot-runner-data:

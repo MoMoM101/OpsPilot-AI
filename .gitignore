@@ -1,0 +1,39 @@
+# Python
+.venv/
+runner/.opspilot-runner-credentials.json
+runner/.opspilot-runner-credentials.json.tmp
+__pycache__/
+*.py[cod]
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+.pytest_cache/
+.pytest*/
+.acceptance*/
+.review*/
+.compose-smoke/
+.uv-cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment and secrets
+.env
+.secrets/
+*.local
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+frontend/*.check.*.json
+frontend/*.check.*.d.ts
+frontend/*.tsbuildinfo
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

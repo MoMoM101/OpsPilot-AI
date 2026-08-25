@@ -1,0 +1,90 @@
+name: Backend
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'main.py'
+      - 'docker-compose.yml'
+      - 'frontend/Dockerfile'
+      - '.github/workflows/backend.yml'
+      - '.github/scripts/postgres_restore_drill.sh'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'main.py'
+      - 'docker-compose.yml'
+      - 'frontend/Dockerfile'
+      - '.github/workflows/backend.yml'
+      - '.github/scripts/postgres_restore_drill.sh'
+
+env:
+  OPSPILOT_DATABASE_URL: postgresql+asyncpg://opspilot:opspilot@localhost:5432/opspilot
+  OPSPILOT_POSTGRES_PASSWORD: opspilot
+  OPSPILOT_ALERTMANAGER_WEBHOOK_TOKEN: ci-alertmanager-token
+  OPSPILOT_RUNNER_BOOTSTRAP_TOKEN: ci-runner-bootstrap-token
+  OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN: ci-control-plane-bootstrap-token
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: opspilot
+          POSTGRES_USER: opspilot
+          POSTGRES_PASSWORD: opspilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opspilot -d opspilot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e './backend[dev]'
+      - run: python -m pytest
+        working-directory: backend
+      - name: Security, Lease and Outbox regression gate
+        run: >-
+          python -m pytest tests/test_security.py tests/test_agent_prompt_security.py
+          tests/test_agent_provider.py tests/test_runners.py tests/test_runner_tasks.py
+          tests/test_outbox_publisher.py
+        working-directory: backend
+      - name: Offline Agent Eval release gate
+        run: python -m app.evaluation
+        working-directory: backend
+      - run: python -m ruff check .
+        working-directory: backend
+      - run: python -m mypy app
+        working-directory: backend
+      - name: Validate cross-platform launcher
+        run: |
+          python -m ruff check main.py
+          python -m mypy --strict main.py
+          python main.py --help
+      - name: Require one Alembic head
+        run: >-
+          python -c "from alembic.config import Config; from alembic.script import
+          ScriptDirectory; heads=ScriptDirectory.from_config(Config('alembic.ini')).get_heads();
+          assert len(heads) == 1, heads"
+        working-directory: backend
+      - run: python -m alembic upgrade head
+        working-directory: backend
+      - run: python -m alembic check
+        working-directory: backend
+      - name: PostgreSQL backup and restore drill
+        run: bash .github/scripts/postgres_restore_drill.sh
+      - name: Prepare file-backed Compose secrets
+        shell: pwsh
+        run: ./scripts/prepare-compose-secrets.ps1
+      - run: docker compose config --quiet
+      - run: docker build --tag opspilot-backend-ci ./backend
+      - run: docker build --tag opspilot-frontend-ci ./frontend

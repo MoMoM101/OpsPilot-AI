@@ -1,0 +1,105 @@
+name: Fault Lab
+
+on:
+  pull_request:
+    paths:
+      - 'lab/**'
+      - 'docker-compose.lab.yml'
+      - 'docker-compose.yml'
+      - '.github/workflows/lab.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lab/**'
+      - 'docker-compose.lab.yml'
+      - 'docker-compose.yml'
+      - '.github/workflows/lab.yml'
+
+env:
+  OPSPILOT_POSTGRES_PASSWORD: lab-ci-postgres-password
+  OPSPILOT_ALERTMANAGER_WEBHOOK_TOKEN: lab-ci-alertmanager-token
+  OPSPILOT_RUNNER_BOOTSTRAP_TOKEN: lab-ci-runner-bootstrap-token
+  OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN: lab-ci-control-plane-bootstrap-token
+  OPSPILOT_LAB_E2E_ACCESS_TOKEN: lab-ci-access-token-placeholder
+  OPSPILOT_LAB_TOKEN: lab-ci-controller-token
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: lab/pyproject.toml
+      - run: python -m pip install -e './lab[dev]'
+      - run: python -m pytest
+        working-directory: lab
+      - run: python -m ruff check .
+        working-directory: lab
+      - run: python -m mypy opspilot_lab
+        working-directory: lab
+
+  compose:
+    name: compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare file-backed Compose secrets
+        shell: pwsh
+        run: ./scripts/prepare-compose-secrets.ps1
+      - name: Validate Fault Lab Compose overlay
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.lab.yml
+          --profile runner --profile lab --profile lab-e2e config --quiet
+      - name: Build Fault Lab image
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.lab.yml
+          --profile lab build embedding
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare file-backed Compose secrets
+        shell: pwsh
+        run: ./scripts/prepare-compose-secrets.ps1
+      - name: Start Control Plane, Runner and Fault Lab
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.lab.yml
+          --profile runner --profile lab up -d --build
+          postgres backend runner qdrant toxiproxy embedding rag-api lab-controller
+      - name: Initialize CI Admin
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 180 bash -c 'until curl --fail --silent http://127.0.0.1:8000/api/v1/ready >/dev/null; do sleep 2; done'
+          response="$(curl --fail --silent --show-error \
+            --request POST http://127.0.0.1:8000/api/v1/principals \
+            --header "Authorization: Bearer ${OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"fault-lab-ci-admin","kind":"user","role":"admin","unrestrictedEnvironments":true}')"
+          access_token="$(python -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])' <<<"${response}")"
+          echo "::add-mask::${access_token}"
+          echo "OPSPILOT_LAB_E2E_ACCESS_TOKEN=${access_token}" >> "${GITHUB_ENV}"
+      - name: Run bounded Fault Lab E2E
+        run: >-
+          timeout --signal=TERM --kill-after=30s 12m
+          docker compose -f docker-compose.yml -f docker-compose.lab.yml
+          --profile runner --profile lab --profile lab-e2e run --rm lab-e2e
+      - name: Collect Compose logs after failure
+        if: failure()
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.lab.yml
+          --profile runner --profile lab --profile lab-e2e logs
+          --no-color --tail 300
+      - name: Tear down Fault Lab
+        if: always()
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.lab.yml
+          --profile runner --profile lab --profile lab-e2e down
+          --volumes --remove-orphans

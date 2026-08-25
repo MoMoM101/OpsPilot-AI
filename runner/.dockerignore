@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.env
+.opspilot-runner-credentials.json*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/

@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible OpsPilot AI defect
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not report vulnerabilities here. Use GitHub Private Vulnerability Reporting as
+        described in SECURITY.md. Remove tokens, customer data, and private infrastructure details.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe and reproducible sequence.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main at abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Backend control plane
+        - Frontend console
+        - Runner
+        - Fault Lab
+        - Migration or database
+        - Docker / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python/Node version, Docker version, database, and browser as relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Paste only logs with secrets and private data removed.
+      render: shell
+

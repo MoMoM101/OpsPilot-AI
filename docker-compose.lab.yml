@@ -1,0 +1,137 @@
+name: opspilot
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    profiles: ["lab"]
+    restart: unless-stopped
+    volumes:
+      - opspilot-lab-qdrant:/qdrant/storage
+    security_opt:
+      - no-new-privileges:true
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    profiles: ["lab"]
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  embedding:
+    build:
+      context: ./lab
+    profiles: ["lab"]
+    restart: unless-stopped
+    command: ["uvicorn", "opspilot_lab.embedding:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      OPSPILOT_LAB_TOKEN: ${OPSPILOT_LAB_TOKEN:-local-fault-lab-token}
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  rag-api:
+    build:
+      context: ./lab
+    profiles: ["lab"]
+    restart: unless-stopped
+    environment:
+      OPSPILOT_LAB_TOKEN: ${OPSPILOT_LAB_TOKEN:-local-fault-lab-token}
+      OPSPILOT_LAB_RAG_SQLITE_PATH: /lab/data/rag.db
+      OPSPILOT_LAB_RAG_EMBEDDING_URL: http://embedding:8001
+      OPSPILOT_LAB_RAG_QDRANT_URL: http://toxiproxy:16333
+    volumes:
+      - opspilot-lab-data:/lab/data
+    depends_on:
+      - embedding
+      - toxiproxy
+    ports:
+      - "127.0.0.1:${OPSPILOT_LAB_RAG_PORT:-18000}:8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  lab-controller:
+    build:
+      context: ./lab
+    profiles: ["lab"]
+    restart: unless-stopped
+    command: ["uvicorn", "opspilot_lab.controller:app", "--host", "0.0.0.0", "--port", "8010"]
+    environment:
+      OPSPILOT_LAB_TOKEN: ${OPSPILOT_LAB_TOKEN:-local-fault-lab-token}
+      OPSPILOT_LAB_CONTROLLER_SQLITE_PATH: /lab/data/rag.db
+      OPSPILOT_LAB_CONTROLLER_TOXIPROXY_URL: http://toxiproxy:8474
+      OPSPILOT_LAB_CONTROLLER_QDRANT_URL: http://qdrant:6333
+      OPSPILOT_LAB_CONTROLLER_RAG_URL: http://rag-api:8000
+      OPSPILOT_LAB_CONTROLLER_EMBEDDING_URL: http://embedding:8001
+    volumes:
+      - opspilot-lab-data:/lab/data
+    depends_on:
+      - rag-api
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  lab-e2e:
+    build:
+      context: ./lab
+    profiles: ["lab-e2e"]
+    environment:
+      OPSPILOT_LAB_E2E_CONTROL_PLANE_URL: http://backend:8000/api/v1
+      OPSPILOT_LAB_E2E_RAG_URL: http://rag-api:8000
+      OPSPILOT_LAB_E2E_ACCESS_TOKEN_FILE: /run/secrets/lab_e2e_access_token
+      OPSPILOT_LAB_E2E_ALERTMANAGER_WEBHOOK_TOKEN_FILE: /run/secrets/alertmanager_webhook_token
+    secrets:
+      - lab_e2e_access_token
+      - alertmanager_webhook_token
+    command: ["opspilot-lab-e2e"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      rag-api:
+        condition: service_started
+      lab-controller:
+        condition: service_started
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  runner:
+    environment:
+      OPSPILOT_RUNNER_PROBE_ALLOWED_HOSTS: '["toxiproxy","rag-api"]'
+      OPSPILOT_RUNNER_PROBE_ALLOWED_PORTS: '[16333,8000]'
+      OPSPILOT_RUNNER_SQLITE_ALLOWED_ROOTS: '["/lab/data"]'
+    volumes:
+      - opspilot-lab-data:/lab/data:ro
+
+  backend:
+    environment:
+      OPSPILOT_ENVIRONMENT: development
+      OPSPILOT_AGENT_RUNTIME_ENABLED: "true"
+      OPSPILOT_AGENT_PROVIDER: lab_deterministic
+      OPSPILOT_AGENT_RUNTIME_POLL_INTERVAL_SECONDS: "0.2"
+      OPSPILOT_LAB_ENABLED: "true"
+      OPSPILOT_LAB_CONTROLLER_URL: http://lab-controller:8010
+      OPSPILOT_LAB_CONTROLLER_TOKEN: ${OPSPILOT_LAB_TOKEN:-local-fault-lab-token}
+
+volumes:
+  opspilot-lab-data:
+  opspilot-lab-qdrant:
+
+secrets:
+  lab_e2e_access_token:
+    environment: OPSPILOT_LAB_E2E_ACCESS_TOKEN
