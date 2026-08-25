@@ -58,6 +58,12 @@ jobs:
       - name: Prepare file-backed Compose secrets
         shell: pwsh
         run: ./scripts/prepare-compose-secrets.ps1
+      - name: Prepare Lab E2E access token file
+        shell: bash
+        run: |
+          install -d -m 700 .secrets
+          umask 077
+          printf '%s' "${OPSPILOT_LAB_E2E_ACCESS_TOKEN}" > .secrets/lab_e2e_access_token
       - name: Validate Fault Lab Compose overlay
         run: >-
           docker compose -f docker-compose.yml -f docker-compose.lab.yml
@@ -76,6 +82,12 @@ jobs:
       - name: Prepare file-backed Compose secrets
         shell: pwsh
         run: ./scripts/prepare-compose-secrets.ps1
+      - name: Prepare Lab E2E access token file
+        shell: bash
+        run: |
+          install -d -m 700 .secrets
+          umask 077
+          printf '%s' "${OPSPILOT_LAB_E2E_ACCESS_TOKEN}" > .secrets/lab_e2e_access_token
       - name: Start Control Plane, Runner and Fault Lab
         run: >-
           docker compose -f docker-compose.yml -f docker-compose.lab.yml
@@ -93,7 +105,8 @@ jobs:
             --data '{"name":"fault-lab-ci-admin","kind":"user","role":"admin","unrestrictedEnvironments":true}')"
           access_token="$(python -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])' <<<"${response}")"
           echo "::add-mask::${access_token}"
-          echo "OPSPILOT_LAB_E2E_ACCESS_TOKEN=${access_token}" >> "${GITHUB_ENV}"
+          umask 077
+          printf '%s' "${access_token}" > .secrets/lab_e2e_access_token
       - name: Run bounded Fault Lab E2E
         run: >-
           timeout --signal=TERM --kill-after=30s 12m

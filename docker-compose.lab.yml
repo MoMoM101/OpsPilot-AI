@@ -134,4 +134,4 @@ volumes:
 
 secrets:
   lab_e2e_access_token:
-    environment: OPSPILOT_LAB_E2E_ACCESS_TOKEN
+    file: ${OPSPILOT_COMPOSE_LAB_E2E_ACCESS_TOKEN_FILE:-./.secrets/lab_e2e_access_token}
