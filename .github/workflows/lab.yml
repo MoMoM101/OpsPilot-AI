@@ -107,6 +107,8 @@ jobs:
           echo "::add-mask::${access_token}"
           umask 077
           printf '%s' "${access_token}" > .secrets/lab_e2e_access_token
+          sudo chown "10002:$(id -g)" .secrets/lab_e2e_access_token
+          chmod 0440 .secrets/lab_e2e_access_token
       - name: Run bounded Fault Lab E2E
         run: >-
           timeout --signal=TERM --kill-after=30s 12m
