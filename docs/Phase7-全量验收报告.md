@@ -1,8 +1,8 @@
 # Phase 7 全量验收报告
 
 > 验收日期：2026-08-25  
-> 验收环境：Windows / Python 3.13 / Docker Desktop / Docker Compose v2  
-> 当前结论：有条件通过；标准产品栈已通过，Fault Lab E2E 需由网络正常的 CI 完成最后确认
+> 验收环境：Windows / Python 3.13 / Docker Desktop / Docker Compose v2；GitHub Actions / Ubuntu 24.04  
+> 当前结论：通过；标准产品栈与 Fault Lab Linux E2E 均已完成验证
 
 ## 1. 验收范围
 
@@ -14,7 +14,7 @@
 
 | 门禁 | 结果 |
 |---|---:|
-| Backend pytest | 197 passed |
+| Backend pytest | 200 passed |
 | Runner pytest | 79 passed |
 | Fault Lab pytest | 18 passed |
 | Frontend Vitest | 51 files / 227 passed |
@@ -30,6 +30,7 @@
 | Fault Lab Compose overlay config | passed |
 | Backend / Frontend / Migration image build | passed |
 | Fault Lab image build | passed |
+| Fault Lab Ubuntu E2E | 5/5 scenarios passed（GitHub Actions run `32854964963`） |
 | `python main.py start --no-open` | passed |
 | Runtime readiness | PostgreSQL、Backend、Frontend 均 healthy |
 
@@ -44,16 +45,14 @@
    `ghcr.io/shopify/toxiproxy:2.12.0`。
 5. `main.py` 已加入 Backend CI 的路径触发、Ruff、严格 MyPy 和帮助命令校验。
 
-## 4. 尚待最后确认
+## 4. Linux E2E 最终确认
 
-Fault Lab 隔离 E2E 未进入场景断言阶段。本机从 Docker Hub 拉取
-`qdrant/qdrant:v1.15.4` 时先发生 `unexpected EOF`，续传随后长时间无字节进展。该问题发生在
-容器创建之前，属于外部镜像传输阻断，不是测试断言失败。
+`.github/workflows/lab.yml` 已在 GitHub Actions Ubuntu 24.04 环境完成最终验收：pytest、
+Ruff、严格 MyPy、Compose 配置、Lab 镜像构建以及带超时限制的五场景 E2E 全部通过。E2E 使用
+独立 Resource 隔离各故障场景，并在结束后删除隔离容器与数据卷。
 
-合并前必须以 `.github/workflows/lab.yml` 的 `e2e` Job 成功作为最终验收条件；该 Job 会在
-Ubuntu 上以 25 分钟总超时和 12 分钟场景超时运行，并在失败时收集日志、最终删除隔离卷。
-GitHub Branch Protection 中还需将 Backend、Runner、Fault Lab 的必要 Job 设置为 Required
-Checks，此仓库外配置无法通过本地文件验收。
+最终通过记录：[Fault Lab run 32854964963](https://github.com/MoMoM101/OpsPilot-AI/actions/runs/32854964963)。
+该 Job 采用 25 分钟总超时和 12 分钟场景超时，失败时收集日志，并始终清理隔离卷。
 
 ## 5. 启动与数据状态
 
