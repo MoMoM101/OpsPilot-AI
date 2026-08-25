@@ -113,7 +113,7 @@ jobs:
         run: >-
           timeout --signal=TERM --kill-after=30s 12m
           docker compose -f docker-compose.yml -f docker-compose.lab.yml
-          --profile runner --profile lab --profile lab-e2e run --rm lab-e2e
+          --profile runner --profile lab --profile lab-e2e run --rm --no-deps lab-e2e
       - name: Collect Compose logs after failure
         if: failure()
         run: >-
