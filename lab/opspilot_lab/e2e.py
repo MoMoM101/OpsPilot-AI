@@ -76,7 +76,7 @@ class ScenarioVerifier:
         self.transport = transport
 
     async def run(self, manifest: ScenarioManifest) -> ScenarioResult:
-        resource = await self._ensure_resource()
+        resource = await self._ensure_resource(manifest)
         cleanup_key = self._key(manifest.id, "cleanup-before")
         await self._mutate(manifest.id, "cleanup", cleanup_key)
         await self._wait_for(manifest.recovered_rag)
@@ -110,7 +110,8 @@ class ScenarioVerifier:
             audit_asserted=True,
         )
 
-    async def _ensure_resource(self) -> dict[str, Any]:
+    async def _ensure_resource(self, manifest: ScenarioManifest) -> dict[str, Any]:
+        resource_name = f"rag-lab-{manifest.id}"
         environments = (await self._control("GET", "/environments?limit=100")).json()
         environment = next(
             (item for item in environments if item.get("slug") == "fault-lab"),
@@ -129,7 +130,8 @@ class ScenarioVerifier:
             (
                 item
                 for item in resources
-                if item.get("environmentId") == environment["id"] and item.get("name") == "rag-lab"
+                if item.get("environmentId") == environment["id"]
+                and item.get("name") == resource_name
             ),
             None,
         )
@@ -143,7 +145,7 @@ class ScenarioVerifier:
                     "/resources",
                     {
                         "environmentId": environment["id"],
-                        "name": "rag-lab",
+                        "name": resource_name,
                         "kind": "rag",
                         "criticality": "high",
                         "attributes": {"observability": {"runnerOperations": self._operations()}},

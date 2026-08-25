@@ -53,7 +53,7 @@ async def test_verifier_drives_each_scenario_through_admin_api_and_recovers(
                         {
                             "id": "resource-1",
                             "environmentId": "environment-1",
-                            "name": "rag-lab",
+                            "name": f"rag-lab-{scenario_id}",
                         }
                     ],
                 )
