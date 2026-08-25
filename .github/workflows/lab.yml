@@ -2,15 +2,6 @@ name: Fault Lab
 
 on:
   pull_request:
-    paths:
-      - 'backend/**'
-      - 'runner/**'
-      - 'frontend/**'
-      - 'lab/**'
-      - 'docker-compose.lab.yml'
-      - 'docker-compose.yml'
-      - 'scripts/prepare-compose-secrets.ps1'
-      - '.github/workflows/lab.yml'
   push:
     branches: [main]
     paths:
@@ -33,11 +24,11 @@ env:
 
 jobs:
   quality:
-    name: quality
+    name: Fault Lab quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -51,10 +42,10 @@ jobs:
         working-directory: lab
 
   compose:
-    name: compose
+    name: Fault Lab compose
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Prepare file-backed Compose secrets
         shell: pwsh
         run: ./scripts/prepare-compose-secrets.ps1
@@ -74,11 +65,11 @@ jobs:
           --profile lab build embedding
 
   e2e:
-    name: e2e
+    name: Fault Lab e2e
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Prepare file-backed Compose secrets
         shell: pwsh
         run: ./scripts/prepare-compose-secrets.ps1

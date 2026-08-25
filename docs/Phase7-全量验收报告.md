@@ -1,7 +1,7 @@
 # Phase 7 全量验收报告
 
 > 验收日期：2026-08-25  
-> 验收环境：Windows / Python 3.13 / Docker Desktop / Docker Compose v2；GitHub Actions / Ubuntu 24.04  
+> 验收环境：Windows / Python 3.13 / Docker Desktop / Docker Compose v2；GitHub Actions / Ubuntu 24.04
 > 当前结论：通过；标准产品栈与 Fault Lab Linux E2E 均已完成验证
 
 ## 1. 验收范围
