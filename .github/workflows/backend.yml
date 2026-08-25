@@ -22,9 +22,6 @@ on:
 env:
   OPSPILOT_DATABASE_URL: postgresql+asyncpg://opspilot:opspilot@localhost:5432/opspilot
   OPSPILOT_POSTGRES_PASSWORD: opspilot
-  OPSPILOT_ALERTMANAGER_WEBHOOK_TOKEN: ci-alertmanager-token
-  OPSPILOT_RUNNER_BOOTSTRAP_TOKEN: ci-runner-bootstrap-token
-  OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN: ci-control-plane-bootstrap-token
 
 jobs:
   verify:
@@ -84,6 +81,10 @@ jobs:
         run: bash .github/scripts/postgres_restore_drill.sh
       - name: Prepare file-backed Compose secrets
         shell: pwsh
+        env:
+          OPSPILOT_ALERTMANAGER_WEBHOOK_TOKEN: ci-alertmanager-token
+          OPSPILOT_RUNNER_BOOTSTRAP_TOKEN: ci-runner-bootstrap-token
+          OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN: ci-control-plane-bootstrap-token
         run: ./scripts/prepare-compose-secrets.ps1
       - run: docker compose config --quiet
       - run: docker build --tag opspilot-backend-ci ./backend

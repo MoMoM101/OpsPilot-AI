@@ -3,16 +3,24 @@ name: Fault Lab
 on:
   pull_request:
     paths:
+      - 'backend/**'
+      - 'runner/**'
+      - 'frontend/**'
       - 'lab/**'
       - 'docker-compose.lab.yml'
       - 'docker-compose.yml'
+      - 'scripts/prepare-compose-secrets.ps1'
       - '.github/workflows/lab.yml'
   push:
     branches: [main]
     paths:
+      - 'backend/**'
+      - 'runner/**'
+      - 'frontend/**'
       - 'lab/**'
       - 'docker-compose.lab.yml'
       - 'docker-compose.yml'
+      - 'scripts/prepare-compose-secrets.ps1'
       - '.github/workflows/lab.yml'
 
 env:
