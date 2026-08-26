@@ -99,7 +99,10 @@ python3 main.py
 
 The launcher creates missing local-only Compose secret files, builds the images, applies Alembic
 migrations, starts PostgreSQL/backend/frontend, and waits for readiness. It never replaces an
-existing secret.
+existing secret. On Linux, it keeps `.secrets/` owner-only (`0700`) and makes the individual
+file-backed secrets readable (`0644`) because Compose bind mounts preserve host ownership while
+the application containers run as non-root users. The files remain unreachable to other host users
+through the owner-only directory and are mounted only into services that declare each secret.
 
 Open <http://127.0.0.1:8080>. On first boot, use the value in
 `.secrets/control_plane_bootstrap_token` on the `/setup` page to create the first unrestricted user
@@ -167,4 +170,3 @@ For vulnerabilities, follow [SECURITY.md](SECURITY.md) instead of opening a publ
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
-

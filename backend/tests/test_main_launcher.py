@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import stat
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -51,6 +53,24 @@ def test_compose_secrets_are_created_once_and_preserved(
     monkeypatch.setenv("OPSPILOT_POSTGRES_PASSWORD", "replacement-must-not-win")
     assert launcher.ensure_compose_secrets() == []
     assert postgres.read_text(encoding="utf-8") == "known-database-password"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
+def test_compose_secrets_are_container_readable_inside_owner_only_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = _load_launcher()
+    monkeypatch.setattr(launcher, "ROOT", tmp_path)
+    monkeypatch.setattr(launcher, "SECRETS_DIRECTORY", tmp_path / ".secrets")
+
+    launcher.ensure_compose_secrets()
+    secret = launcher.SECRETS_DIRECTORY / "postgres_password"
+    assert stat.S_IMODE(launcher.SECRETS_DIRECTORY.stat().st_mode) == 0o700
+    assert stat.S_IMODE(secret.stat().st_mode) == 0o644
+
+    secret.chmod(0o600)
+    launcher.ensure_compose_secrets()
+    assert stat.S_IMODE(secret.stat().st_mode) == 0o644
 
 
 def test_health_probe_accepts_non_json_success(monkeypatch: pytest.MonkeyPatch) -> None:

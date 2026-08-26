@@ -25,6 +25,9 @@ SECRET_FILES = {
     "OPSPILOT_CONTROL_PLANE_BOOTSTRAP_TOKEN": "control_plane_bootstrap_token",
 }
 
+POSIX_SECRET_DIRECTORY_MODE = 0o700
+POSIX_SECRET_FILE_MODE = 0o644
+
 
 def _fail(message: str, exit_code: int = 1) -> NoReturn:
     print(f"ERROR: {message}", file=sys.stderr)
@@ -45,16 +48,27 @@ def _env_file_values() -> dict[str, str]:
     return values
 
 
+def _set_posix_mode(path: Path, mode: int) -> None:
+    if os.name != "posix":
+        return
+    try:
+        path.chmod(mode)
+    except OSError as exc:
+        _fail(f"Unable to set permissions on {path}: {exc}")
+
+
 def ensure_compose_secrets() -> list[Path]:
     """Create missing local-only Compose secrets without replacing existing values."""
     env_values = _env_file_values()
-    SECRETS_DIRECTORY.mkdir(mode=0o700, parents=True, exist_ok=True)
+    SECRETS_DIRECTORY.mkdir(mode=POSIX_SECRET_DIRECTORY_MODE, parents=True, exist_ok=True)
+    _set_posix_mode(SECRETS_DIRECTORY, POSIX_SECRET_DIRECTORY_MODE)
     created: list[Path] = []
     for environment_name, filename in SECRET_FILES.items():
         target = SECRETS_DIRECTORY / filename
         if target.exists():
             if not target.read_text(encoding="utf-8").strip():
                 _fail(f"Secret file is empty: {target}")
+            _set_posix_mode(target, POSIX_SECRET_FILE_MODE)
             continue
         value = os.environ.get(environment_name) or env_values.get(environment_name)
         if not value:
@@ -62,10 +76,7 @@ def ensure_compose_secrets() -> list[Path]:
         if "\n" in value or "\r" in value:
             _fail(f"Secret contains a newline: {environment_name}")
         target.write_text(value, encoding="utf-8")
-        try:
-            target.chmod(0o600)
-        except OSError:
-            pass
+        _set_posix_mode(target, POSIX_SECRET_FILE_MODE)
         created.append(target)
     return created
 

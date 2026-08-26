@@ -32,10 +32,28 @@ $mapping = [ordered]@{
 }
 
 [IO.Directory]::CreateDirectory($outputPath) | Out-Null
+$isUnix = [Environment]::OSVersion.Platform -eq [PlatformID]::Unix
+if ($isUnix) {
+    [IO.File]::SetUnixFileMode(
+        $outputPath,
+        [IO.UnixFileMode]::UserRead -bor
+            [IO.UnixFileMode]::UserWrite -bor
+            [IO.UnixFileMode]::UserExecute
+    )
+}
 $encoding = [Text.UTF8Encoding]::new($false)
 foreach ($entry in $mapping.GetEnumerator()) {
     $target = Join-Path $outputPath $entry.Value
     if ([IO.File]::Exists($target) -and -not $Force) {
+        if ($isUnix) {
+            [IO.File]::SetUnixFileMode(
+                $target,
+                [IO.UnixFileMode]::UserRead -bor
+                    [IO.UnixFileMode]::UserWrite -bor
+                    [IO.UnixFileMode]::GroupRead -bor
+                    [IO.UnixFileMode]::OtherRead
+            )
+        }
         Write-Output "EXISTS $($entry.Value)"
         continue
     }
@@ -58,5 +76,17 @@ foreach ($entry in $mapping.GetEnumerator()) {
         throw "Secret contains a newline: $($entry.Key)"
     }
     [IO.File]::WriteAllText($target, $value, $encoding)
+    if ($isUnix) {
+        # Compose implements file-backed secrets as bind mounts. The owner-only
+        # parent directory protects the host path, while the mounted file must
+        # remain readable by the service's non-root UID.
+        [IO.File]::SetUnixFileMode(
+            $target,
+            [IO.UnixFileMode]::UserRead -bor
+                [IO.UnixFileMode]::UserWrite -bor
+                [IO.UnixFileMode]::GroupRead -bor
+                [IO.UnixFileMode]::OtherRead
+        )
+    }
     Write-Output "WROTE $($entry.Value)"
 }
